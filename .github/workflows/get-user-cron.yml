@@ -10,6 +10,11 @@ jobs:
   run-test:
     runs-on: ubuntu-latest
     timeout-minutes: 360 # 6-hour maximum
+    strategy:
+      fail-fast: false
+      matrix:
+        # Spin up 20 parallel runner instances
+        runner-id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
     steps:
       - name: Checkout repository
@@ -24,42 +29,17 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Connect to Proton VPN
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openvpn
-          sed -i 's/\r$//' vpn.ovpn
-          echo "${{ secrets.OVPN_USERNAME }}" > /tmp/vpn-auth.txt
-          echo "${{ secrets.OVPN_PASSWORD }}" >> /tmp/vpn-auth.txt
-          sudo openvpn --config vpn.ovpn --auth-user-pass /tmp/vpn-auth.txt --daemon --log /tmp/vpn.log
-          echo "Waiting for VPN connection..."
-          for i in $(seq 1 30); do
-            if ip a show tun0 > /dev/null 2>&1; then
-              echo "VPN connected!"
-              curl -s https://api.ipify.org && echo ""
-              break
-            fi
-            echo "  Attempt $i/30... (checking vpn.log)"
-            tail -3 /tmp/vpn.log 2>/dev/null || true
-            sleep 2
-          done
-          if ! ip a show tun0 > /dev/null 2>&1; then
-            echo "VPN connection failed. Full log:"
-            cat /tmp/vpn.log
-            exit 1
-          fi
-
       - name: Run Get User Test
+        env:
+          TEST_DURATION_MINUTES: '330'
+          TARGET_RPS: '50'        # Keep RPS at 50 per IP to stay under the 60 RPS server limit
+          CONCURRENCY_LIMIT: '10'
         run: node get-user-test.js
-
-      - name: Disconnect VPN
-        if: always()
-        run: sudo killall openvpn || true
 
       - name: Upload Report Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: get-user-test-reports
+          name: get-user-test-reports-runner-${{ matrix.runner-id }}
           path: summary-report-getuser-*.json
           if-no-files-found: warn

