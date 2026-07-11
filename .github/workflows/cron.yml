@@ -25,6 +25,8 @@ jobs:
         run: npm ci || npm install
 
       - name: Run GET Automation Test
+        env:
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: node index.js
 
       - name: Upload performance report

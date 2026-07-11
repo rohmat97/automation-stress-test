@@ -3,6 +3,7 @@ import path from 'path';
 import readline from 'readline';
 import https from 'https';
 import http from 'http';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // =============================================
 // GET USER API AUTOMATION TEST CONFIGURATION
@@ -14,6 +15,7 @@ const TEST_DURATION_MINUTES = parseInt(process.env.TEST_DURATION_MINUTES) || 330
 const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Sustainable rate to avoid WAF blocks
 const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Conservative to avoid IP bans
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 10 seconds timeout per call
+const PROXY_URL = process.env.PROXY_URL || ''; // Optional: proxy URL (e.g. http://user:pass@host:port)
 
 async function runGetUserAutomation() {
   const testDurationMs = TEST_DURATION_MINUTES * 60 * 1000;
@@ -27,6 +29,7 @@ async function runGetUserAutomation() {
   console.log(`Target RPS:        ${TARGET_RPS > 0 ? TARGET_RPS : 'Unlimited'}`);
   console.log(`Concurrency Limit: ${CONCURRENCY_LIMIT}`);
   console.log(`Request Timeout:   ${REQUEST_TIMEOUT_MS}ms`);
+  console.log(`Proxy:             ${PROXY_URL || 'None'}`);
   console.log(`----------------------------------------------\n`);
 
   const startTime = Date.now();
@@ -43,15 +46,24 @@ async function runGetUserAutomation() {
   let dispatched = 0;
   let activeRequestsCount = 0;
 
-  // Set up high-performance client Agent
+  // Set up client Agent (with optional proxy support)
   const parsedUrl = new URL(TARGET_URL);
   const isHttps = parsedUrl.protocol === 'https:';
   const client = isHttps ? https : http;
-  const agent = new client.Agent({
-    keepAlive: true,
-    maxSockets: CONCURRENCY_LIMIT,
-    keepAliveMsecs: 60000,
-  });
+
+  let agent;
+  if (PROXY_URL) {
+    agent = new HttpsProxyAgent(PROXY_URL, {
+      keepAlive: true,
+      maxSockets: CONCURRENCY_LIMIT,
+    });
+  } else {
+    agent = new client.Agent({
+      keepAlive: true,
+      maxSockets: CONCURRENCY_LIMIT,
+      keepAliveMsecs: 60000,
+    });
+  }
 
   const requestOptions = {
     hostname: parsedUrl.hostname,
