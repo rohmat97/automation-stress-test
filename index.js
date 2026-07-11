@@ -5,11 +5,11 @@ import https from 'https';
 import http from 'http';
 
 // Configurable constants
-const TARGET_URL = 'https://2.52gs.co/chklogin.php';
-const TOTAL_REQUESTS = 5000000000;
-const TARGET_RPS = 66667; // Target: ~1,000,000 requests per minute
-const CONCURRENCY_LIMIT = 1000; // Allow up to 2000 concurrent sockets
-const REQUEST_TIMEOUT_MS = 5000; // 5 seconds timeout per call
+const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/chklogin.php';
+const TOTAL_REQUESTS = parseInt(process.env.TOTAL_REQUESTS) || 5000000000000000;
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Target: ~1,000,000 requests per minute
+const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Allow up to 2000 concurrent sockets
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 5 seconds timeout per call
 
 async function runAutomation() {
   console.log(`Starting GET API Automation Test`);
@@ -54,6 +54,8 @@ async function runAutomation() {
     }
   };
 
+  const isTTY = process.stdout.isTTY;
+
   // Render a visual progress bar
   function drawProgressBar() {
     const width = 30;
@@ -65,17 +67,22 @@ async function runAutomation() {
 
     const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}`;
 
-    // Clear line and write from beginning
-    readline.clearLine(process.stdout, 0);
-    readline.cursorTo(process.stdout, 0);
-    process.stdout.write(statsText);
+    if (isTTY) {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+      process.stdout.write(statsText);
+    } else {
+      console.log(statsText);
+    }
   }
 
   // Throttle CLI progress bar updates to prevent console bottlenecking
   let lastProgressUpdate = 0;
+  const updateIntervalMs = isTTY ? 100 : 5000;
+
   function maybeDrawProgressBar() {
     const now = Date.now();
-    if (now - lastProgressUpdate >= 100 || completedCount === TOTAL_REQUESTS) {
+    if (now - lastProgressUpdate >= updateIntervalMs || completedCount === TOTAL_REQUESTS) {
       lastProgressUpdate = now;
       drawProgressBar();
     }
@@ -256,9 +263,15 @@ async function runAutomation() {
   process.off('SIGTERM', handleShutdown);
 
   await saveReport();
+
+  if (failureCount > 0) {
+    console.error(`\nTest completed but encountered ${failureCount} failures.`);
+    process.exit(1);
+  }
 }
 
 runAutomation().catch(err => {
   console.error('Fatal error running automation:', err);
+  process.exit(1);
 });
 

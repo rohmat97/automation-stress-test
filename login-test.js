@@ -335,8 +335,14 @@ async function runLoginAutomation() {
   process.off('SIGTERM', handleShutdown);
 
   await saveReport();
+
+  if (failureCount > 0) {
+    console.error(`\nTest completed but encountered ${failureCount} failures.`);
+    process.exit(1);
+  }
 }
 
 runLoginAutomation().catch((err) => {
   console.error('Fatal error running login automation:', err);
+  process.exit(1);
 });
