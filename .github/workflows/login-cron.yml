@@ -27,6 +27,9 @@ jobs:
       - name: Run Login Test
         # Run for 30 seconds, then send SIGINT (Ctrl+C) to gracefully stop, generate, and save the report.
         # This prevents the workflow from running forever (5 billion requests).
+        env:
+          TARGET_RPS: 50
+          CONCURRENCY_LIMIT: 5
         run: |
           node login-test.js &
           PID=$!
