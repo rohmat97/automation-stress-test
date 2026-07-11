@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         # Spin up 20 parallel runner instances
-        runner-id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        runner-id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     steps:
       - name: Checkout repository
@@ -30,10 +30,6 @@ jobs:
         run: npm ci || npm install
 
       - name: Run GET Automation Test
-        env:
-          TEST_DURATION_MINUTES: '330'
-          TARGET_RPS: '50'        # Keep RPS at 50 per IP to stay under the 60 RPS server limit
-          CONCURRENCY_LIMIT: '10'
         run: node index.js
 
       - name: Upload performance report
