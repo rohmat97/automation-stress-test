@@ -57,7 +57,6 @@ async function runLoginAutomation() {
 
   let nextRequestIndex = 0;
   let activeRequestsCount = 0;
-  let backoffDelayMs = 0;
 
   // Set up high-performance client Agent
   const parsedUrl = new URL(TARGET_URL);
@@ -97,7 +96,7 @@ async function runLoginAutomation() {
     const bar = '='.repeat(filledLength) + ' '.repeat(emptyLength);
     const percent = (progress * 100).toFixed(1);
 
-    const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}${backoffDelayMs > 0 ? ` | Backoff: ${backoffDelayMs}ms` : ''}`;
+    const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}`;
 
     if (isTTY) {
       readline.clearLine(process.stdout, 0);
@@ -161,12 +160,8 @@ async function runLoginAutomation() {
           failureCount++;
           const blockType = status === 403 ? 'Cloudflare WAF Block (403)' : (status === 429 ? 'Rate Limit (429)' : 'Login Limit Redirect (302)');
           errors.set(blockType, (errors.get(blockType) || 0) + 1);
-          // Back off significantly
-          backoffDelayMs = Math.min(backoffDelayMs + 200, 3000);
         } else if (status >= 200 && status < 400) {
           successCount++;
-          // Recover backoff slowly
-          backoffDelayMs = Math.max(0, backoffDelayMs - 5);
         } else {
           failureCount++;
           const statusText = `HTTP ${status} ${res.statusMessage || ''}`;
@@ -216,9 +211,7 @@ async function runLoginAutomation() {
         continue;
       }
 
-      if (backoffDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, backoffDelayMs));
-      }
+
 
       if (TARGET_RPS > 0) {
         const elapsedMs = Date.now() - startTime;
