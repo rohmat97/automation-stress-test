@@ -36,15 +36,6 @@ jobs:
           kill -2 $PID
           wait $PID || true
 
-      - name: Archive production artifacts
-        uses: actions/actions-artifact-helper@v2
-        # Uses the default upload tool to upload generated summary JSON files.
-        # This ensures the performance results are downloadable from GitHub.
-        with:
-          name: login-stress-test-report
-          path: summary-report-login-*.json
-        continue-on-error: true
-
       - name: Upload Report Artifacts
         uses: actions/upload-artifact@v4
         with:
