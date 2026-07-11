@@ -15,12 +15,6 @@ const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 50; // Sustainable rate t
 const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 10; // Conservative to avoid IP bans
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 10000; // 10 seconds timeout per call
 
-// Adaptive backoff settings
-const CONSECUTIVE_FAIL_THRESHOLD = 20;
-const BACKOFF_MIN_MS = 15000;
-const BACKOFF_MAX_MS = 60000;
-const JITTER_MAX_MS = 200;
-
 async function runGetUserAutomation() {
   const testDurationMs = TEST_DURATION_MINUTES * 60 * 1000;
   const endTime = Date.now() + testDurationMs;
@@ -33,16 +27,13 @@ async function runGetUserAutomation() {
   console.log(`Target RPS:        ${TARGET_RPS > 0 ? TARGET_RPS : 'Unlimited'}`);
   console.log(`Concurrency Limit: ${CONCURRENCY_LIMIT}`);
   console.log(`Request Timeout:   ${REQUEST_TIMEOUT_MS}ms`);
-  console.log(`Backoff Threshold: ${CONSECUTIVE_FAIL_THRESHOLD} consecutive failures`);
   console.log(`----------------------------------------------\n`);
 
   const startTime = Date.now();
   let completedCount = 0;
   let successCount = 0;
   let failureCount = 0;
-  let consecutiveFailures = 0;
-  let totalBackoffTimeMs = 0;
-  let backoffCount = 0;
+
 
   const responseTimes = [];
   const errors = new Map();
@@ -154,15 +145,12 @@ async function runGetUserAutomation() {
 
           if (isBlock) {
             failureCount++;
-            consecutiveFailures++;
             const blockType = status === 403 ? 'Cloudflare WAF Block (403)' : (status === 429 ? 'Rate Limit (429)' : 'Redirect to Error (302)');
             errors.set(blockType, (errors.get(blockType) || 0) + 1);
           } else if (status >= 200 && status < 400) {
             successCount++;
-            consecutiveFailures = 0;
           } else {
             failureCount++;
-            consecutiveFailures++;
             const statusText = `HTTP ${status} ${res.statusMessage || ''}`;
             errors.set(statusText, (errors.get(statusText) || 0) + 1);
           }
@@ -178,7 +166,6 @@ async function runGetUserAutomation() {
         if (timedOut) return;
 
         failureCount++;
-        consecutiveFailures++;
         const errMsg = err.code || err.message || err.toString() || 'Unknown Error';
         errors.set(errMsg, (errors.get(errMsg) || 0) + 1);
 
@@ -193,7 +180,6 @@ async function runGetUserAutomation() {
         req.destroy();
 
         failureCount++;
-        consecutiveFailures++;
         errors.set('Timeout', (errors.get('Timeout') || 0) + 1);
 
         activeRequestsCount--;
@@ -207,31 +193,11 @@ async function runGetUserAutomation() {
     });
   }
 
-  // Random jitter
-  function randomJitter() {
-    return Math.floor(Math.random() * JITTER_MAX_MS);
-  }
 
-  // Adaptive backoff when too many consecutive failures
-  async function maybeBackoff() {
-    if (consecutiveFailures >= CONSECUTIVE_FAIL_THRESHOLD) {
-      const backoffMs = BACKOFF_MIN_MS + Math.floor(Math.random() * (BACKOFF_MAX_MS - BACKOFF_MIN_MS));
-      backoffCount++;
-      totalBackoffTimeMs += backoffMs;
-      console.log(`\n[Backoff #${backoffCount}] ${consecutiveFailures} consecutive failures detected. Pausing for ${(backoffMs / 1000).toFixed(0)}s...`);
-      consecutiveFailures = 0;
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-    }
-  }
 
   // Duration-based scheduler
   async function startScheduler() {
     while (Date.now() < endTime) {
-      // Check for adaptive backoff
-      await maybeBackoff();
-
-      // If time is up after backoff, stop
-      if (Date.now() >= endTime) break;
 
       if (activeRequestsCount >= CONCURRENCY_LIMIT) {
         await new Promise((resolve) => setImmediate(resolve));
@@ -250,11 +216,6 @@ async function runGetUserAutomation() {
       dispatched++;
       activeRequestsCount++;
       dispatchRequest();
-
-      // Add random jitter between dispatches
-      if (JITTER_MAX_MS > 0 && Math.random() < 0.3) {
-        await new Promise((resolve) => setTimeout(resolve, randomJitter()));
-      }
     }
   }
 
@@ -282,8 +243,7 @@ async function runGetUserAutomation() {
       successCount,
       failureCount,
       successRate: completedCount > 0 ? `${((successCount / completedCount) * 100).toFixed(1)}%` : '0%',
-      backoffCount,
-      totalBackoffTimeSeconds: parseFloat((totalBackoffTimeMs / 1000).toFixed(1)),
+
       latencyStatsMs: {
         min: minLatency,
         max: maxLatency,
@@ -304,7 +264,6 @@ async function runGetUserAutomation() {
     console.log(`Total Requests:    ${completedCount}`);
     console.log(`Requests/Sec:      ${summary.requestsPerSecond}`);
     console.log(`Success Rate:      ${summary.successRate}`);
-    console.log(`Backoffs:          ${backoffCount} (total ${(totalBackoffTimeMs / 1000).toFixed(0)}s paused)`);
     console.log(`Min Latency:       ${minLatency}ms`);
     console.log(`Max Latency:       ${maxLatency}ms`);
     console.log(`Avg Latency:       ${avgLatency}ms`);
