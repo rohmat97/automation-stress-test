@@ -25,19 +25,7 @@ jobs:
         run: npm ci || npm install
 
       - name: Run Login Test
-        # Run for 30 seconds, then send SIGINT (Ctrl+C) to gracefully stop, generate, and save the report.
-        # This prevents the workflow from running forever (5 billion requests).
-        env:
-          TARGET_RPS: 50
-          CONCURRENCY_LIMIT: 5
-        run: |
-          node login-test.js &
-          PID=$!
-          echo "Started login-test.js with PID $PID"
-          sleep 30
-          echo "Sending SIGINT (Ctrl+C) to stop and generate report..."
-          kill -2 $PID
-          wait $PID || true
+        run: node login-test.js
 
       - name: Upload Report Artifacts
         uses: actions/upload-artifact@v4
