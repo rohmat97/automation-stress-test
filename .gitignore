@@ -1,0 +1,5 @@
+node_modules/
+summary-report-*.json
+summary-report.json
+.vscode/
+.idea/
