@@ -2,7 +2,7 @@ name: Run Get User Stress Test Cron
 
 on:
   schedule:
-    # Runs daily at midnight UTC (each run takes ~5.5 hours, so hourly would overlap)
+    # Runs daily at midnight UTC
     - cron: '0 0 * * *'
   workflow_dispatch: # Allows manual trigger from the Actions tab
 
@@ -24,10 +24,34 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
+      - name: Connect to Proton VPN
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn
+          echo "${{ secrets.OVPN_USERNAME }}" > /tmp/vpn-auth.txt
+          echo "${{ secrets.OVPN_PASSWORD }}" >> /tmp/vpn-auth.txt
+          sudo openvpn --config vpn.ovpn --auth-user-pass /tmp/vpn-auth.txt --daemon --log /tmp/vpn.log
+          echo "Waiting for VPN connection..."
+          for i in $(seq 1 30); do
+            if ip a show tun0 > /dev/null 2>&1; then
+              echo "VPN connected!"
+              curl -s https://api.ipify.org && echo ""
+              break
+            fi
+            sleep 2
+          done
+          if ! ip a show tun0 > /dev/null 2>&1; then
+            echo "VPN connection failed. Logs:"
+            cat /tmp/vpn.log
+            exit 1
+          fi
+
       - name: Run Get User Test
-        env:
-          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: node get-user-test.js
+
+      - name: Disconnect VPN
+        if: always()
+        run: sudo killall openvpn || true
 
       - name: Upload Report Artifacts
         uses: actions/upload-artifact@v4
