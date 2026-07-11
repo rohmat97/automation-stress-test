@@ -28,6 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openvpn
+          sed -i 's/\r$//' vpn.ovpn
           echo "${{ secrets.OVPN_USERNAME }}" > /tmp/vpn-auth.txt
           echo "${{ secrets.OVPN_PASSWORD }}" >> /tmp/vpn-auth.txt
           sudo openvpn --config vpn.ovpn --auth-user-pass /tmp/vpn-auth.txt --daemon --log /tmp/vpn.log
@@ -38,10 +39,12 @@ jobs:
               curl -s https://api.ipify.org && echo ""
               break
             fi
+            echo "  Attempt $i/30... (checking vpn.log)"
+            tail -3 /tmp/vpn.log 2>/dev/null || true
             sleep 2
           done
           if ! ip a show tun0 > /dev/null 2>&1; then
-            echo "VPN connection failed. Logs:"
+            echo "VPN connection failed. Full log:"
             cat /tmp/vpn.log
             exit 1
           fi
