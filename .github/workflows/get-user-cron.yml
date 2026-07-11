@@ -8,7 +8,7 @@ on:
 
 jobs:
   run-test:
-    runs-on: self-hosted
+    runs-on: ubuntu-stable
     timeout-minutes: 360 # 6-hour maximum
 
     steps:
