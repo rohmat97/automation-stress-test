@@ -2,14 +2,14 @@ name: Run Get User Stress Test Cron
 
 on:
   schedule:
-    # Runs every hour. Change this cron expression to your desired schedule.
-    # E.g., '0 0 * * *' to run daily at midnight UTC.
-    - cron: '0 * * * *'
+    # Runs daily at midnight UTC (each run takes ~5.5 hours, so hourly would overlap)
+    - cron: '0 0 * * *'
   workflow_dispatch: # Allows manual trigger from the Actions tab
 
 jobs:
   run-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6-hour maximum
 
     steps:
       - name: Checkout repository
@@ -25,28 +25,11 @@ jobs:
         run: npm ci || npm install
 
       - name: Run Get User Test
-        run: |
-          max_attempts=5
-          attempt=1
-          success=false
-
-          while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt of $max_attempts..."
-            if node get-user-test.js; then
-              echo "Test completed successfully!"
-              success=true
-              break
-            else
-              echo "Test failed. Retrying in 10 seconds..."
-              sleep 10
-            fi
-            attempt=$((attempt + 1))
-          done
-
-          if [ "$success" = false ]; then
-            echo "All retry attempts failed."
-            exit 1
-          fi
+        env:
+          TEST_DURATION_MINUTES: '330'
+          TARGET_RPS: '50'
+          CONCURRENCY_LIMIT: '10'
+        run: node get-user-test.js
 
       - name: Upload Report Artifacts
         uses: actions/upload-artifact@v4

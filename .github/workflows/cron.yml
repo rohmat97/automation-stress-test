@@ -2,14 +2,14 @@ name: Scheduled GET Automation Test
 
 on:
   schedule:
-    # Runs at 00:00 UTC every day. Customize the cron expression as needed.
-    # To learn more about cron syntax: https://crontab.guru/
+    # Runs at 00:00 UTC every day
     - cron: '0 0 * * *'
   workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
 
 jobs:
   run-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6-hour maximum
 
     steps:
       - name: Checkout repository
@@ -19,30 +19,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
 
       - name: Run GET Automation Test
-        run: |
-          max_attempts=5
-          attempt=1
-          success=false
-
-          while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt of $max_attempts..."
-            if node index.js; then
-              echo "Test completed successfully!"
-              success=true
-              break
-            else
-              echo "Test failed. Retrying in 10 seconds..."
-              sleep 10
-            fi
-            attempt=$((attempt + 1))
-          done
-
-          if [ "$success" = false ]; then
-            echo "All retry attempts failed."
-            exit 1
-          fi
+        env:
+          TEST_DURATION_MINUTES: '330'
+          TARGET_RPS: '50'
+          CONCURRENCY_LIMIT: '10'
+        run: node index.js
 
       - name: Upload performance report
         uses: actions/upload-artifact@v4
