@@ -17,7 +17,7 @@ const LOGIN_CREDENTIALS = {
 // Stress test parameters
 const TOTAL_REQUESTS = parseInt(process.env.TOTAL_REQUESTS) || 5000000000000000;
 const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Target: ~1,000,000 requests per minute
-const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 500; // Allow up to 2000 concurrent sockets
+const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Allow up to 2000 concurrent sockets
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 5 seconds timeout per call
 
 // =============================================

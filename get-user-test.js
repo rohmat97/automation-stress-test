@@ -11,9 +11,9 @@ const TARGET_URL = process.env.TARGET_URL || 'https://52gs.co/user.asp';
 
 // Duration-based test parameters
 const TEST_DURATION_MINUTES = parseInt(process.env.TEST_DURATION_MINUTES) || 330; // 5.5 hours
-const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 50; // Sustainable rate to avoid WAF blocks
-const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 10; // Conservative to avoid IP bans
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 10000; // 10 seconds timeout per call
+const TARGET_RPS = parseInt(process.env.TARGET_RPS) || 66667; // Sustainable rate to avoid WAF blocks
+const CONCURRENCY_LIMIT = parseInt(process.env.CONCURRENCY_LIMIT) || 1000; // Conservative to avoid IP bans
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 5000; // 10 seconds timeout per call
 
 async function runGetUserAutomation() {
   const testDurationMs = TEST_DURATION_MINUTES * 60 * 1000;
