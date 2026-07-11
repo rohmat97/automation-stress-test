@@ -1,0 +1,53 @@
+name: Run Login Stress Test Cron
+
+on:
+  schedule:
+    # Runs every hour. Change this cron expression to your desired schedule.
+    # E.g., '0 0 * * *' to run daily at midnight UTC.
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
+jobs:
+  run-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run Login Test
+        # Run for 30 seconds, then send SIGINT (Ctrl+C) to gracefully stop, generate, and save the report.
+        # This prevents the workflow from running forever (5 billion requests).
+        run: |
+          node login-test.js &
+          PID=$!
+          echo "Started login-test.js with PID $PID"
+          sleep 30
+          echo "Sending SIGINT (Ctrl+C) to stop and generate report..."
+          kill -2 $PID
+          wait $PID || true
+
+      - name: Archive production artifacts
+        uses: actions/actions-artifact-helper@v2
+        # Uses the default upload tool to upload generated summary JSON files.
+        # This ensures the performance results are downloadable from GitHub.
+        with:
+          name: login-stress-test-report
+          path: summary-report-login-*.json
+        continue-on-error: true
+
+      - name: Upload Report Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-test-reports
+          path: summary-report-login-*.json
+          if-no-files-found: warn
