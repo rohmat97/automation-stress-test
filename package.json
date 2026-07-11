@@ -1,0 +1,14 @@
+{
+  "name": "get-call-api-automation",
+  "version": "1.0.0",
+  "description": "Automation test script to make 1,000 GET requests with concurrency control and reporting",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "start-5": "run-5-instances.bat"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
